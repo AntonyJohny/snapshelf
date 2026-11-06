@@ -85,3 +85,30 @@ Requires Node.js and an AWS account with the resources below created.
 ## About me
 
 Built by Antony Johny
+# Snapshelf
+
+## Local authentication
+
+The Express API stores registered accounts in `server/data/users.json`. Passwords are hashed
+with bcrypt; the raw password is never written to that file. The data directory is excluded
+from Git.
+
+Set a stable, random `AUTH_TOKEN_SECRET` in `server/.env` before starting the API. For example,
+from the `server` directory, generate one with:
+
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+In development, the API generates a temporary secret if this setting is omitted, which
+invalidates login tokens whenever the server restarts. Production requires the setting.
+
+The client uses `http://localhost:4000/api` by default in development. Set `VITE_API_URL` in
+`client/.env` to override it. Sign-up and sign-in are available on the same screen. Image upload
+and gallery endpoints require a valid sign-in. Remote API URLs must use HTTPS so passwords and
+sign-in tokens are not sent over plaintext HTTP.
+
+Signed-in users can download the original file from a gallery card or delete their own uploads.
+Deletion removes the S3 original and thumbnail and then removes the DynamoDB record; in-flight
+thumbnail jobs detect deleted records and clean up rather than recreating them.
+

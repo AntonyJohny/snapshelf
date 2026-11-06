@@ -1,7 +1,13 @@
 const express = require("express");
-const { saveImage, listImages } = require("../services/dynamo");
+const {
+  deleteImageRecord,
+  findImage,
+  listImages,
+  markImageDeleting,
+  saveImage,
+} = require("../services/dynamo");
 const { sendImageJob } = require("../services/sqs");
-const { createViewUrl } = require("../services/s3");
+const { createDownloadUrl, createViewUrl, deleteImageObjects } = require("../services/s3");
 
 const router = express.Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -9,7 +15,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // called after the browser has finished uploading to S3
 router.post("/", async (req, res) => {
   try {
-    const { id, title, tags } = req.body;
+    const { id, title, tags, fileName } = req.body;
     if (!UUID.test(id || "")) return res.status(400).json({ error: "Invalid id" });
 
     const cleanTitle = String(title || "").trim().slice(0, 100);
@@ -26,6 +32,8 @@ router.post("/", async (req, res) => {
       tags: cleanTags,
       status: "PROCESSING",
       originalKey: `originals/${id}`,
+      fileName: String(fileName || "").split(/[\\/]/).pop().replace(/[^\w.-]/g, "_").slice(0, 120),
+      ownerEmail: req.user.email,
       createdAt: new Date().toISOString(),
     };
 
@@ -35,6 +43,38 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not save image" });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!UUID.test(id)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const image = await findImage(id);
+    if (!image) return res.status(404).json({ error: "Image not found" });
+    if (image.ownerEmail && image.ownerEmail !== req.user.email) {
+      return res.status(403).json({ error: "You can only delete images you uploaded." });
+    }
+
+    try {
+      await markImageDeleting(id);
+    } catch (error) {
+      if (error.name === "ConditionalCheckFailedException") {
+        return res.status(404).json({ error: "Image not found" });
+      }
+      throw error;
+    }
+
+    await deleteImageObjects([
+      image.originalKey || `originals/${id}`,
+      image.thumbKey || `thumbs/${id}.jpg`,
+    ]);
+    await deleteImageRecord(id);
+    res.status(204).end();
+  } catch (err) {
+    console.error("Could not delete image:", err);
+    res.status(500).json({ error: "Could not delete image and its stored files. You can retry." });
   }
 });
 
@@ -55,6 +95,7 @@ router.get("/", async (req, res) => {
               ...i,
               thumbUrl: await createViewUrl(i.thumbKey),
               originalUrl: await createViewUrl(i.originalKey),
+              downloadUrl: await createDownloadUrl(i.originalKey, i.fileName || `image-${i.id}`),
             }
           : i
       )

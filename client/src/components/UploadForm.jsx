@@ -29,14 +29,27 @@ export default function UploadForm({ onDone }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 8, marginBottom: 24 }}>
-      <input type="file" accept="image/jpeg,image/png,image/webp"
-             onChange={(e) => setFile(e.target.files[0])} />
-      <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      <input placeholder="Tags (comma separated)" value={tags}
-             onChange={(e) => setTags(e.target.value)} />
+    <form className="upload-form" onSubmit={handleSubmit}>
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        aria-label="Choose an image"
+        onChange={(e) => setFile(e.target.files[0])}
+      />
+      <input
+        placeholder="Title"
+        aria-label="Image title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <input
+        placeholder="Tags (comma separated)"
+        aria-label="Image tags"
+        value={tags}
+        onChange={(e) => setTags(e.target.value)}
+      />
       <button type="submit">Upload</button>
-      <span>{status}</span>
+      <span className="upload-status" role="status">{status}</span>
     </form>
   );
 }

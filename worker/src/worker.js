@@ -4,7 +4,12 @@ const {
   ReceiveMessageCommand,
   DeleteMessageCommand,
 } = require("@aws-sdk/client-sqs");
-const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  S3Client,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+} = require("@aws-sdk/client-s3");
 const { SNSClient, PublishCommand } = require("@aws-sdk/client-sns");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
@@ -35,6 +40,7 @@ async function setStatus(id, status, thumbKey) {
       TableName,
       Key: { id },
       UpdateExpression: expr,
+      ConditionExpression: "attribute_exists(id) AND #s <> :deleting",
       ExpressionAttributeNames: { "#s": "status" },
       ExpressionAttributeValues: values,
     })
@@ -56,6 +62,10 @@ async function processImage(id) {
   await log("info", "Thumbnail created", { id });
 }
 
+async function removeOrphanedThumbnail(id) {
+  await s3.send(new DeleteObjectCommand({ Bucket, Key: `thumbs/${id}.jpg` }));
+}
+
 function deleteMessage(m) {
   return sqs.send(new DeleteMessageCommand({ QueueUrl, ReceiptHandle: m.ReceiptHandle }));
 }
@@ -67,10 +77,24 @@ async function handleMessage(m) {
     await processImage(id);
     await deleteMessage(m); // delete only after success
   } catch (err) {
+    if (err.name === "ConditionalCheckFailedException") {
+      await removeOrphanedThumbnail(id);
+      await deleteMessage(m);
+      await log("info", "Image deleted during processing", { id });
+      return;
+    }
+
     await log("error", "Thumbnail failed", { id, attempt, error: err.message });
     // Not deleted yet, so SQS will retry after ~30s. After 3 tries, give up.
     if (attempt >= MAX_ATTEMPTS) {
-      await setStatus(id, "FAILED");
+      try {
+        await setStatus(id, "FAILED");
+      } catch (statusError) {
+        if (statusError.name !== "ConditionalCheckFailedException") throw statusError;
+        await removeOrphanedThumbnail(id);
+        await deleteMessage(m);
+        return;
+      }
       await sns.send(
         new PublishCommand({
           TopicArn: process.env.SNS_TOPIC_ARN,
