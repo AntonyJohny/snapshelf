@@ -30,18 +30,25 @@ const MAX_ATTEMPTS = 3;
 // "status" is a reserved word in DynamoDB, so we use the alias #s
 async function setStatus(id, status, thumbKey) {
   let expr = "SET #s = :s";
-  const values = { ":s": status };
+  const values = {
+    ":s": status,
+    ":deleting": "DELETING",
+  };
+
   if (thumbKey) {
     expr += ", thumbKey = :t";
     values[":t"] = thumbKey;
   }
+
   await db.send(
     new UpdateCommand({
       TableName,
       Key: { id },
       UpdateExpression: expr,
       ConditionExpression: "attribute_exists(id) AND #s <> :deleting",
-      ExpressionAttributeNames: { "#s": "status" },
+      ExpressionAttributeNames: {
+        "#s": "status",
+      },
       ExpressionAttributeValues: values,
     })
   );
