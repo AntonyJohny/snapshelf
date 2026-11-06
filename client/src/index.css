@@ -1,4 +1,4 @@
-body {
+/* body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
@@ -42,4 +42,24 @@ h1,
 h2,
 p {
   margin-top: 0;
+} */
+
+
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
 }
